@@ -45,17 +45,20 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Vector;
 
+/**
+ * 所有的网络操作都在这个类中
+ */
 public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
-    public final String LOG_TAG = SunshineSyncAdapter.class.getSimpleName();
+    private static final String TAG                     = "SunshineSyncAdapter";
     // Interval at which to sync with the weather, in seconds.
     // 60 seconds (1 minute) * 180 = 3 hours
-    public static final int SYNC_INTERVAL = 60 * 180;
-    public static final int SYNC_FLEXTIME = SYNC_INTERVAL/3;
-    private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
-    private static final int WEATHER_NOTIFICATION_ID = 3004;
+    public static final  int    SYNC_INTERVAL           = 60 * 180; // 同步间隔时间 三个小时
+    public static final  int    SYNC_FLEXTIME           = SYNC_INTERVAL / 3;  // 一个小时
+    private static final long   DAY_IN_MILLIS           = 1000 * 60 * 60 * 24;  // 一天中的毫秒数
+    private static final int    WEATHER_NOTIFICATION_ID = 3004;
 
 
-    private static final String[] NOTIFY_WEATHER_PROJECTION = new String[] {
+    private static final String[] NOTIFY_WEATHER_PROJECTION = new String[]{
             WeatherContract.WeatherEntry.COLUMN_WEATHER_ID,
             WeatherContract.WeatherEntry.COLUMN_MAX_TEMP,
             WeatherContract.WeatherEntry.COLUMN_MIN_TEMP,
@@ -64,18 +67,20 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
     // these indices must match the projection
     private static final int INDEX_WEATHER_ID = 0;
-    private static final int INDEX_MAX_TEMP = 1;
-    private static final int INDEX_MIN_TEMP = 2;
+    private static final int INDEX_MAX_TEMP   = 1;
+    private static final int INDEX_MIN_TEMP   = 2;
     private static final int INDEX_SHORT_DESC = 3;
 
     public SunshineSyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
     }
 
+    // 这是一个操作网络的方法
     @Override
     public void onPerformSync(Account account, Bundle extras, String authority, ContentProviderClient provider, SyncResult syncResult) {
-        Log.d(LOG_TAG, "Starting sync");
+        Log.d(TAG, "Starting sync");
         String locationQuery = Utility.getPreferredLocation(getContext());
+        Log.d(TAG, "onPerformSync: " + locationQuery);
 
         // These two need to be declared outside the try/catch
         // so that they can be closed in the finally block.
@@ -101,14 +106,17 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             final String DAYS_PARAM = "cnt";
             final String APPID_PARAM = "APPID";
 
-            Uri builtUri = Uri.parse(FORECAST_BASE_URL).buildUpon()
-                    .appendQueryParameter(QUERY_PARAM, locationQuery)
-                    .appendQueryParameter(FORMAT_PARAM, format)
-                    .appendQueryParameter(UNITS_PARAM, units)
-                    .appendQueryParameter(DAYS_PARAM, Integer.toString(numDays))
-                    .appendQueryParameter(APPID_PARAM, BuildConfig.OPEN_WEATHER_MAP_API_KEY)
-                    .build();
+            Uri builtUri = Uri.parse(FORECAST_BASE_URL)
+                              .buildUpon()
+                              .appendQueryParameter(QUERY_PARAM, locationQuery)
+                              .appendQueryParameter(FORMAT_PARAM, format)
+                              .appendQueryParameter(UNITS_PARAM, units)
+                              .appendQueryParameter(DAYS_PARAM, Integer.toString(numDays))
+                              .appendQueryParameter(APPID_PARAM,
+                                                    BuildConfig.OPEN_WEATHER_MAP_API_KEY)
+                              .build();
 
+            Log.d(TAG, "URI的地址: " + builtUri.toString());
             URL url = new URL(builtUri.toString());
 
             // Create the request to OpenWeatherMap, and open the connection
@@ -138,13 +146,16 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 return;
             }
             forecastJsonStr = buffer.toString();
+            Log.d(TAG, "forecastJsonStr: " + forecastJsonStr);
+
+            // 调用方法
             getWeatherDataFromJson(forecastJsonStr, locationQuery);
         } catch (IOException e) {
-            Log.e(LOG_TAG, "Error ", e);
+            Log.e(TAG, "Error ", e);
             // If the code didn't successfully get the weather data, there's no point in attempting
             // to parse it.
         } catch (JSONException e) {
-            Log.e(LOG_TAG, e.getMessage(), e);
+            Log.e(TAG, e.getMessage(), e);
             e.printStackTrace();
         } finally {
             if (urlConnection != null) {
@@ -154,7 +165,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 try {
                     reader.close();
                 } catch (final IOException e) {
-                    Log.e(LOG_TAG, "Error closing stream", e);
+                    Log.e(TAG, "Error closing stream", e);
                 }
             }
         }
@@ -164,7 +175,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     /**
      * Take the String representing the complete forecast in JSON Format and
      * pull out the data we need to construct the Strings needed for the wireframes.
-     *
+     * 拿到json数据以后进行转换， 在构造函数里去调用相关的转换逻辑 转换成一个entity（bean）
+     * <p/>
      * Fortunately parsing is easy:  constructor takes the JSON string and converts it
      * into an Object hierarchy for us.
      */
@@ -177,18 +189,19 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         // into an Object hierarchy for us.
 
         // These are the names of the JSON objects that need to be extracted.
+        // 下面所封装的是 json对象所需要提取的关键字
 
-        // Location information
-        final String OWM_CITY = "city";
-        final String OWM_CITY_NAME = "name";
-        final String OWM_COORD = "coord";
+        // Location information   位置信息
+        final String OWM_CITY = "city"; // 城市名
+        final String OWM_CITY_NAME = "name"; // 名称
+        final String OWM_COORD = "coord";  // 坐标
 
-        // Location coordinate
+        // Location coordinate  经纬度
         final String OWM_LATITUDE = "lat";
         final String OWM_LONGITUDE = "lon";
 
         // Weather information.  Each day's forecast info is an element of the "list" array.
-        final String OWM_LIST = "list";
+        final String OWM_LIST = "list";  // 天气的具体信息列表 的 key
 
         final String OWM_PRESSURE = "pressure";
         final String OWM_HUMIDITY = "humidity";
@@ -205,12 +218,18 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         final String OWM_WEATHER_ID = "id";
 
         try {
+            // 拿到JsonObj的对象， 里面附带的是 json数据
             JSONObject forecastJson = new JSONObject(forecastJsonStr);
+            // json对象去调用 getJsonArray拿到json里的数组 拿到里面的value 保存成一个 json数组的对象
             JSONArray weatherArray = forecastJson.getJSONArray(OWM_LIST);
 
+            // 拿到城市名
             JSONObject cityJson = forecastJson.getJSONObject(OWM_CITY);
+            // 城市名对象调用getString 根据key 拿到里面的value
             String cityName = cityJson.getString(OWM_CITY_NAME);
+            Log.d(TAG, "cityName: " + cityName);
 
+            // 根据城市名 拿到对象， 让对象去拿里面的 key 地理位置
             JSONObject cityCoord = cityJson.getJSONObject(OWM_COORD);
             double cityLatitude = cityCoord.getDouble(OWM_LATITUDE);
             double cityLongitude = cityCoord.getDouble(OWM_LONGITUDE);
@@ -218,6 +237,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             long locationId = addLocation(locationSetting, cityName, cityLatitude, cityLongitude);
 
             // Insert the new weather information into the database
+            // 把数据保存到数据库里 每次获取数据时 有时间限制 可以避免多次进行网络操作
+            // TODO: 2016/5/24  为什么要用Vector
             Vector<ContentValues> cVVector = new Vector<ContentValues>(weatherArray.length());
 
             // OWM returns daily forecasts based upon the local time of the city that is being
@@ -228,16 +249,17 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             // current day, we're going to take advantage of that to get a nice
             // normalized UTC date for all of our weather.
 
+            // 拿到time 对象
             Time dayTime = new Time();
-            dayTime.setToNow();
+            dayTime.setToNow();  // 拿到当前的时间
 
             // we start at the day returned by local time. Otherwise this is a mess.
             int julianStartDay = Time.getJulianDay(System.currentTimeMillis(), dayTime.gmtoff);
 
-            // now we work exclusively in UTC
+            // now we work exclusively in UTC  以UTC时间为准
             dayTime = new Time();
 
-            for(int i = 0; i < weatherArray.length(); i++) {
+            for (int i = 0; i < weatherArray.length(); i++) {
                 // These are the values that will be collected.
                 long dateTime;
                 double pressure;
@@ -255,7 +277,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 JSONObject dayForecast = weatherArray.getJSONObject(i);
 
                 // Cheating to convert this to UTC time, which is what we want anyhow
-                dateTime = dayTime.setJulianDay(julianStartDay+i);
+                dateTime = dayTime.setJulianDay(julianStartDay + i);
+                Log.d(TAG, "dateTime: " + dateTime);
 
                 pressure = dayForecast.getDouble(OWM_PRESSURE);
                 humidity = dayForecast.getInt(OWM_HUMIDITY);
@@ -265,7 +288,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 // Description is in a child array called "weather", which is 1 element long.
                 // That element also contains a weather code.
                 JSONObject weatherObject =
-                        dayForecast.getJSONArray(OWM_WEATHER).getJSONObject(0);
+                        dayForecast.getJSONArray(OWM_WEATHER)
+                                   .getJSONObject(0);
                 description = weatherObject.getString(OWM_DESCRIPTION);
                 weatherId = weatherObject.getInt(OWM_WEATHER_ID);
 
@@ -293,23 +317,26 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
             int inserted = 0;
             // add to database
-            if ( cVVector.size() > 0 ) {
+            if (cVVector.size() > 0) {
                 ContentValues[] cvArray = new ContentValues[cVVector.size()];
                 cVVector.toArray(cvArray);
-                getContext().getContentResolver().bulkInsert(WeatherContract.WeatherEntry.CONTENT_URI, cvArray);
+                getContext().getContentResolver()
+                            .bulkInsert(WeatherContract.WeatherEntry.CONTENT_URI, cvArray);
 
                 // delete old data so we don't build up an endless history
-                getContext().getContentResolver().delete(WeatherContract.WeatherEntry.CONTENT_URI,
-                        WeatherContract.WeatherEntry.COLUMN_DATE + " <= ?",
-                        new String[] {Long.toString(dayTime.setJulianDay(julianStartDay-1))});
+                getContext().getContentResolver()
+                            .delete(WeatherContract.WeatherEntry.CONTENT_URI,
+                                    WeatherContract.WeatherEntry.COLUMN_DATE + " <= ?",
+                                    new String[]{Long.toString(
+                                            dayTime.setJulianDay(julianStartDay - 1))});
 
                 notifyWeather();
             }
 
-            Log.d(LOG_TAG, "Sync Complete. " + cVVector.size() + " Inserted");
+            Log.d(TAG, "Sync Complete. " + cVVector.size() + " Inserted");
 
         } catch (JSONException e) {
-            Log.e(LOG_TAG, e.getMessage(), e);
+            Log.e(TAG, e.getMessage(), e);
             e.printStackTrace();
         }
     }
@@ -320,9 +347,10 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         String displayNotificationsKey = context.getString(R.string.pref_enable_notifications_key);
         boolean displayNotifications = prefs.getBoolean(displayNotificationsKey,
-                Boolean.parseBoolean(context.getString(R.string.pref_enable_notifications_default)));
+                                                        Boolean.parseBoolean(context.getString(
+                                                                R.string.pref_enable_notifications_default)));
 
-        if ( displayNotifications ) {
+        if (displayNotifications) {
 
             String lastNotificationKey = context.getString(R.string.pref_last_notification);
             long lastSync = prefs.getLong(lastNotificationKey, 0);
@@ -331,10 +359,13 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 // Last sync was more than 1 day ago, let's send a notification with the weather.
                 String locationQuery = Utility.getPreferredLocation(context);
 
-                Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithDate(locationQuery, System.currentTimeMillis());
+                Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithDate(
+                        locationQuery, System.currentTimeMillis());
 
                 // we'll query our contentProvider, as always
-                Cursor cursor = context.getContentResolver().query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null, null);
+                Cursor cursor = context.getContentResolver()
+                                       .query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null,
+                                              null);
 
                 if (cursor.moveToFirst()) {
                     int weatherId = cursor.getInt(INDEX_WEATHER_ID);
@@ -345,11 +376,13 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                     int iconId = Utility.getIconResourceForWeatherCondition(weatherId);
                     Resources resources = context.getResources();
                     Bitmap largeIcon = BitmapFactory.decodeResource(resources,
-                            Utility.getArtResourceForWeatherCondition(weatherId));
+                                                                    Utility.getArtResourceForWeatherCondition(
+                                                                            weatherId));
                     String title = context.getString(R.string.app_name);
 
                     // Define the text of the forecast.
-                    String contentText = String.format(context.getString(R.string.format_notification),
+                    String contentText = String.format(
+                            context.getString(R.string.format_notification),
                             desc,
                             Utility.formatTemperature(context, high),
                             Utility.formatTemperature(context, low));
@@ -382,7 +415,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                     mBuilder.setContentIntent(resultPendingIntent);
 
                     NotificationManager mNotificationManager =
-                            (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+                            (NotificationManager) getContext().getSystemService(
+                                    Context.NOTIFICATION_SERVICE);
                     // WEATHER_NOTIFICATION_ID allows you to update the notification later on.
                     mNotificationManager.notify(WEATHER_NOTIFICATION_ID, mBuilder.build());
 
@@ -400,21 +434,22 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
      * Helper method to handle insertion of a new location in the weather database.
      *
      * @param locationSetting The location string used to request updates from the server.
-     * @param cityName A human-readable city name, e.g "Mountain View"
-     * @param lat the latitude of the city
-     * @param lon the longitude of the city
+     * @param cityName        A human-readable city name, e.g "Mountain View"
+     * @param lat             the latitude of the city
+     * @param lon             the longitude of the city
      * @return the row ID of the added location.
      */
     long addLocation(String locationSetting, String cityName, double lat, double lon) {
         long locationId;
 
         // First, check if the location with this city name exists in the db
-        Cursor locationCursor = getContext().getContentResolver().query(
-                WeatherContract.LocationEntry.CONTENT_URI,
-                new String[]{WeatherContract.LocationEntry._ID},
-                WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING + " = ?",
-                new String[]{locationSetting},
-                null);
+        Cursor locationCursor = getContext().getContentResolver()
+                                            .query(
+                                                    WeatherContract.LocationEntry.CONTENT_URI,
+                                                    new String[]{WeatherContract.LocationEntry._ID},
+                                                    WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING + " = ?",
+                                                    new String[]{locationSetting},
+                                                    null);
 
         if (locationCursor.moveToFirst()) {
             int locationIdIndex = locationCursor.getColumnIndex(WeatherContract.LocationEntry._ID);
@@ -427,15 +462,17 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             // Then add the data, along with the corresponding name of the data type,
             // so the content provider knows what kind of value is being inserted.
             locationValues.put(WeatherContract.LocationEntry.COLUMN_CITY_NAME, cityName);
-            locationValues.put(WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING, locationSetting);
+            locationValues.put(WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING,
+                               locationSetting);
             locationValues.put(WeatherContract.LocationEntry.COLUMN_COORD_LAT, lat);
             locationValues.put(WeatherContract.LocationEntry.COLUMN_COORD_LONG, lon);
 
             // Finally, insert location data into the database.
-            Uri insertedUri = getContext().getContentResolver().insert(
-                    WeatherContract.LocationEntry.CONTENT_URI,
-                    locationValues
-            );
+            Uri insertedUri = getContext().getContentResolver()
+                                          .insert(
+                                                  WeatherContract.LocationEntry.CONTENT_URI,
+                                                  locationValues
+                                          );
 
             // The resulting URI contains the ID for the row.  Extract the locationId from the Uri.
             locationId = ContentUris.parseId(insertedUri);
@@ -455,18 +492,24 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             // we can enable inexact timers in our periodic sync
             SyncRequest request = new SyncRequest.Builder().
-                    syncPeriodic(syncInterval, flexTime).
-                    setSyncAdapter(account, authority).
-                    setExtras(new Bundle()).build();
+                                                                   syncPeriodic(syncInterval,
+                                                                                flexTime)
+                                                           .
+                                                                   setSyncAdapter(account,
+                                                                                  authority)
+                                                           .
+                                                                   setExtras(new Bundle())
+                                                           .build();
             ContentResolver.requestSync(request);
         } else {
             ContentResolver.addPeriodicSync(account,
-                    authority, new Bundle(), syncInterval);
+                                            authority, new Bundle(), syncInterval);
         }
     }
 
     /**
      * Helper method to have the sync adapter sync immediately
+     *
      * @param context The context used to access the account service
      */
     public static void syncImmediately(Context context) {
@@ -474,7 +517,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true);
         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true);
         ContentResolver.requestSync(getSyncAccount(context),
-                context.getString(R.string.content_authority), bundle);
+                                    context.getString(R.string.content_authority), bundle);
     }
 
     /**
@@ -492,10 +535,11 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
         // Create the account type and default account
         Account newAccount = new Account(
-                context.getString(R.string.app_name), context.getString(R.string.sync_account_type));
+                context.getString(R.string.app_name),
+                context.getString(R.string.sync_account_type));
 
         // If the password doesn't exist, the account doesn't exist
-        if ( null == accountManager.getPassword(newAccount) ) {
+        if (null == accountManager.getPassword(newAccount)) {
 
         /*
          * Add the account and account type, no password or user data
@@ -525,7 +569,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         /*
          * Without calling setSyncAutomatically, our periodic sync will not be enabled.
          */
-        ContentResolver.setSyncAutomatically(newAccount, context.getString(R.string.content_authority), true);
+        ContentResolver.setSyncAutomatically(newAccount,
+                                             context.getString(R.string.content_authority), true);
 
         /*
          * Finally, let's do a sync to get things started
