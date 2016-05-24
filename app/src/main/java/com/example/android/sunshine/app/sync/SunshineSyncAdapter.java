@@ -47,6 +47,10 @@ import java.util.Vector;
 
 /**
  * 所有的网络操作都在这个类中
+ * 两个事:
+ *          从网络中 获取数据,解析json
+ *          把相应的数据 存放起来
+ *
  */
 public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     private static final String TAG                     = "SunshineSyncAdapter";
@@ -98,6 +102,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             // Construct the URL for the OpenWeatherMap query
             // Possible parameters are avaiable at OWM's forecast API page, at
             // http://openweathermap.org/API#forecast
+            // 封装获取网络的常量
             final String FORECAST_BASE_URL =
                     "http://api.openweathermap.org/data/2.5/forecast/daily?";
             final String QUERY_PARAM = "q";
@@ -106,6 +111,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             final String DAYS_PARAM = "cnt";
             final String APPID_PARAM = "APPID";
 
+            // 进行拼接 API
             Uri builtUri = Uri.parse(FORECAST_BASE_URL)
                               .buildUpon()
                               .appendQueryParameter(QUERY_PARAM, locationQuery)
@@ -119,12 +125,12 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             Log.d(TAG, "URI的地址: " + builtUri.toString());
             URL url = new URL(builtUri.toString());
 
-            // Create the request to OpenWeatherMap, and open the connection
+            // Create the request to OpenWeatherMap, and open the connection 进行网络请求
             urlConnection = (HttpURLConnection) url.openConnection();
             urlConnection.setRequestMethod("GET");
             urlConnection.connect();
 
-            // Read the input stream into a String
+            // Read the input stream into a String 输入流获取请求的内容
             InputStream inputStream = urlConnection.getInputStream();
             StringBuffer buffer = new StringBuffer();
             if (inputStream == null) {
@@ -148,7 +154,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             forecastJsonStr = buffer.toString();
             Log.d(TAG, "forecastJsonStr: " + forecastJsonStr);
 
-            // 调用方法
+            // 调用方法 转换数据
             getWeatherDataFromJson(forecastJsonStr, locationQuery);
         } catch (IOException e) {
             Log.e(TAG, "Error ", e);
@@ -261,6 +267,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
             for (int i = 0; i < weatherArray.length(); i++) {
                 // These are the values that will be collected.
+                // 定义value里面需要取得值 的 变量
+
                 long dateTime;
                 double pressure;
                 int humidity;
@@ -274,33 +282,45 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 int weatherId;
 
                 // Get the JSON object representing the day
+                // 拿到这一天中 json对象里的具体数据
                 JSONObject dayForecast = weatherArray.getJSONObject(i);
-
                 // Cheating to convert this to UTC time, which is what we want anyhow
+                // 把日期转换成了需要的日期   打印log的时候 拿到了：1465185600000 1秒= 10亿纳秒
                 dateTime = dayTime.setJulianDay(julianStartDay + i);
-                Log.d(TAG, "dateTime: " + dateTime);
+                Log.d(TAG, "被转换后的dateTime: " + dateTime);
 
+                // 拿到压力
                 pressure = dayForecast.getDouble(OWM_PRESSURE);
+                // 湿度
                 humidity = dayForecast.getInt(OWM_HUMIDITY);
+                // 风速
                 windSpeed = dayForecast.getDouble(OWM_WINDSPEED);
+                // 风向
                 windDirection = dayForecast.getDouble(OWM_WIND_DIRECTION);
 
                 // Description is in a child array called "weather", which is 1 element long.
                 // That element also contains a weather code.
+                // 调用数据对象里面的weather 的key 拿到里面的第一个元素 得到weather对象
                 JSONObject weatherObject =
                         dayForecast.getJSONArray(OWM_WEATHER)
                                    .getJSONObject(0);
+                // 用weather对象 拿到里面的 description的key
                 description = weatherObject.getString(OWM_DESCRIPTION);
+                Log.d(TAG, "description: " + description);
+                // weather对象 拿到对应的ID
                 weatherId = weatherObject.getInt(OWM_WEATHER_ID);
+                Log.d(TAG, "weatherId: " + weatherId);
 
                 // Temperatures are in a child object called "temp".  Try not to name variables
                 // "temp" when working with temperature.  It confuses everybody.
+                // 根据 "temp" key 拿到里面的value  通过气温的对象 获得里面的高温和低温
                 JSONObject temperatureObject = dayForecast.getJSONObject(OWM_TEMPERATURE);
                 high = temperatureObject.getDouble(OWM_MAX);
                 low = temperatureObject.getDouble(OWM_MIN);
 
+                // 基本取到了需要的数据 需要 content provider
                 ContentValues weatherValues = new ContentValues();
-
+                // 把获取到的所有的数据 都放到了 map集合里
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_LOC_KEY, locationId);
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_DATE, dateTime);
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_HUMIDITY, humidity);
@@ -312,24 +332,30 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_SHORT_DESC, description);
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID, weatherId);
 
+                // 把map值 放到 vector对象里
                 cVVector.add(weatherValues);
             }
 
             int inserted = 0;
-            // add to database
+            // add to database 遍历 vector对象 把里面的数据取出来 存到 数据库里
             if (cVVector.size() > 0) {
+                // 拿到长度
                 ContentValues[] cvArray = new ContentValues[cVVector.size()];
+                // 变成数组对象
                 cVVector.toArray(cvArray);
+                // 存key和value
                 getContext().getContentResolver()
                             .bulkInsert(WeatherContract.WeatherEntry.CONTENT_URI, cvArray);
 
                 // delete old data so we don't build up an endless history
+                // 删除数据库里面的旧的数据 找到key， 定义数据库的操作语句， 所对应要删除的数据
                 getContext().getContentResolver()
                             .delete(WeatherContract.WeatherEntry.CONTENT_URI,
-                                    WeatherContract.WeatherEntry.COLUMN_DATE + " <= ?",
+                                    WeatherContract.WeatherEntry.COLUMN_DATE + " <= ?", //使用数据库语句操作
                                     new String[]{Long.toString(
                                             dayTime.setJulianDay(julianStartDay - 1))});
 
+                // 通知view更新数据
                 notifyWeather();
             }
 
@@ -341,6 +367,9 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         }
     }
 
+    /**
+     * 通知view更新数据
+     */
     private void notifyWeather() {
         Context context = getContext();
         //checking the last update and notify if it' the first of the day
@@ -352,17 +381,21 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
         if (displayNotifications) {
 
+            //拿到最后更新的日期
             String lastNotificationKey = context.getString(R.string.pref_last_notification);
-            long lastSync = prefs.getLong(lastNotificationKey, 0);
+            Log.d(TAG, "lastNotificationKey: " + lastNotificationKey);
+            long lastSync = prefs.getLong(lastNotificationKey, 0); // 最后同步时间
 
+            // 当前时间 -  最近一次同步的时间 大于 1天
             if (System.currentTimeMillis() - lastSync >= DAY_IN_MILLIS) {
                 // Last sync was more than 1 day ago, let's send a notification with the weather.
                 String locationQuery = Utility.getPreferredLocation(context);
 
                 Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithDate(
                         locationQuery, System.currentTimeMillis());
+                Log.d(TAG, "weatherUri: " + weatherUri.toString());
 
-                // we'll query our contentProvider, as always
+                // we'll query our contentProvider, as always 遍历数据库拿到cursor对象
                 Cursor cursor = context.getContentResolver()
                                        .query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null,
                                               null);
@@ -373,14 +406,18 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                     double low = cursor.getDouble(INDEX_MIN_TEMP);
                     String desc = cursor.getString(INDEX_SHORT_DESC);
 
+                    // 根据weatherid 去判断 需要展示哪一个天气图标
                     int iconId = Utility.getIconResourceForWeatherCondition(weatherId);
                     Resources resources = context.getResources();
+                    // 解码一个图片 拿到bitmap对象
                     Bitmap largeIcon = BitmapFactory.decodeResource(resources,
                                                                     Utility.getArtResourceForWeatherCondition(
                                                                             weatherId));
+                    // 拿到应用名
                     String title = context.getString(R.string.app_name);
 
-                    // Define the text of the forecast.
+                    // Define the text of the forecast.  自己定义的展示数据的格式
+                    // 进行数据的格式化 才能正确显示
                     String contentText = String.format(
                             context.getString(R.string.format_notification),
                             desc,
@@ -389,6 +426,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
                     // NotificationCompatBuilder is a very convenient way to build backward-compatible
                     // notifications.  Just throw in some data.
+                    // 通知显示当前的数据
                     NotificationCompat.Builder mBuilder =
                             new NotificationCompat.Builder(getContext())
                                     .setColor(resources.getColor(R.color.sunshine_light_blue))
@@ -405,6 +443,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                     // started Activity.
                     // This ensures that navigating backward from the Activity leads out of
                     // your application to the Home screen.
+                    // 当按了导航键 返回到桌面时  会构建一个通知在下拉栏里
                     TaskStackBuilder stackBuilder = TaskStackBuilder.create(context);
                     stackBuilder.addNextIntent(resultIntent);
                     PendingIntent resultPendingIntent =
@@ -418,9 +457,10 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                             (NotificationManager) getContext().getSystemService(
                                     Context.NOTIFICATION_SERVICE);
                     // WEATHER_NOTIFICATION_ID allows you to update the notification later on.
+                    // 根据id 去重新构建一次 通知
                     mNotificationManager.notify(WEATHER_NOTIFICATION_ID, mBuilder.build());
 
-                    //refreshing last sync
+                    //refreshing last sync 记住上一次的更新时间 和 当前系统时间
                     SharedPreferences.Editor editor = prefs.edit();
                     editor.putLong(lastNotificationKey, System.currentTimeMillis());
                     editor.commit();
@@ -443,6 +483,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         long locationId;
 
         // First, check if the location with this city name exists in the db
+        // 检查一下 当前传入的location 和 记住的location 是否匹配
         Cursor locationCursor = getContext().getContentResolver()
                                             .query(
                                                     WeatherContract.LocationEntry.CONTENT_URI,
@@ -457,10 +498,13 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         } else {
             // Now that the content provider is set up, inserting rows of data is pretty simple.
             // First create a ContentValues object to hold the data you want to insert.
+            // 创建contentValues的对象 用来保存数据
             ContentValues locationValues = new ContentValues();
 
             // Then add the data, along with the corresponding name of the data type,
+            // 添加数据, 根据相应的key 存 value
             // so the content provider knows what kind of value is being inserted.
+            // content provider 知道 如何去存匹配的数据
             locationValues.put(WeatherContract.LocationEntry.COLUMN_CITY_NAME, cityName);
             locationValues.put(WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING,
                                locationSetting);
@@ -468,18 +512,19 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             locationValues.put(WeatherContract.LocationEntry.COLUMN_COORD_LONG, lon);
 
             // Finally, insert location data into the database.
+            // 把数据信息 插入到 数据库里
             Uri insertedUri = getContext().getContentResolver()
-                                          .insert(
-                                                  WeatherContract.LocationEntry.CONTENT_URI,
+                                          .insert(WeatherContract.LocationEntry.CONTENT_URI,
                                                   locationValues
                                           );
 
             // The resulting URI contains the ID for the row.  Extract the locationId from the Uri.
+            // 分析提取uri里面所携带的数据
             locationId = ContentUris.parseId(insertedUri);
         }
 
         locationCursor.close();
-        // Wait, that worked?  Yes!
+        // Wait, that worked?  Yes! 返回解析出来的LocationId 就可以了
         return locationId;
     }
 
@@ -491,14 +536,9 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         String authority = context.getString(R.string.content_authority);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             // we can enable inexact timers in our periodic sync
-            SyncRequest request = new SyncRequest.Builder().
-                                                                   syncPeriodic(syncInterval,
-                                                                                flexTime)
-                                                           .
-                                                                   setSyncAdapter(account,
-                                                                                  authority)
-                                                           .
-                                                                   setExtras(new Bundle())
+            SyncRequest request = new SyncRequest.Builder().syncPeriodic(syncInterval, flexTime)
+                                                           .setSyncAdapter(account, authority)
+                                                           .setExtras(new Bundle())
                                                            .build();
             ContentResolver.requestSync(request);
         } else {
@@ -509,6 +549,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
     /**
      * Helper method to have the sync adapter sync immediately
+     * 立刻同步数据
      *
      * @param context The context used to access the account service
      */

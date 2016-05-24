@@ -60,6 +60,7 @@ public class MainActivity extends ActionBarActivity implements ForecastFragment.
                 .findFragmentById(R.id.fragment_forecast));
         forecastFragment.setUseTodayLayout(!mTwoPane);
 
+        // 初始化解析数据的类 ,开始联网获取数据
         SunshineSyncAdapter.initializeSyncAdapter(this);
     }
 
